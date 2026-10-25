@@ -19,7 +19,7 @@ const agreementSchema = new mongoose.Schema(
       state: { type: String, default: "Bihar" },
       country: { type: String, default: "India" },
       zipCode: { type: String, default: "800026" },
-      email: { type: String, default: "hello.webflora@gmail.com" },
+      email: { type: String, default: "info@webfloratechnologies.com" },
       phone: { type: String, default: "+91 8863081255" },
       alternatePhone: { type: String, default: "+91 8540814729" },
       gstNumber: { type: String, default: "" },

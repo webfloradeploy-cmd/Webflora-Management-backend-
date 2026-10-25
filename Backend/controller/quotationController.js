@@ -1,6 +1,17 @@
 import Quotation from "../model/quotationModel.js";
 import Lead from "../model/leadModel.js";
 import Counter from "../model/counterModel.js";
+import { sendQuotationEmail as sendQuotationEmailService } from "../utils/emailService.js";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const logoPath = path.resolve(__dirname, "../../frontend/public/webfloralogo.png");
 
 // Create a new quotation
 const createQuotation = async (req, res) => {
@@ -12,8 +23,14 @@ const createQuotation = async (req, res) => {
         } = req.body;
         const adminId = req.user.id;
 
-        if (!leadId || !totalAmount) {
-            return res.status(400).json({ success: false, message: "Lead ID and total amount are required" });
+        let computedTotal = 0;
+        if (Array.isArray(items)) {
+            computedTotal = items.reduce((sum, item) => sum + ((Number(item.quantity) || 1) * (Number(item.price) || 0)), 0);
+        }
+        const finalTotal = (totalAmount !== undefined && totalAmount !== null && totalAmount !== "") ? Number(totalAmount) : computedTotal;
+
+        if (!leadId) {
+            return res.status(400).json({ success: false, message: "Lead ID is required" });
         }
 
         let qNo = quotationNo;
@@ -44,7 +61,7 @@ const createQuotation = async (req, res) => {
             websitePages: websitePages || [],
             adminPanelFeatures: adminPanelFeatures || [],
             items: items || [],
-            totalAmount,
+            totalAmount: finalTotal,
             timeline: timeline || [],
             deliverables: deliverables || [],
             paymentTerms: paymentTerms || [],
@@ -56,6 +73,7 @@ const createQuotation = async (req, res) => {
         });
 
         await newQuotation.save();
+        await newQuotation.populate("leadId", "leadName email contactNumber");
         res.status(201).json({ success: true, message: "Quotation created successfully", quotation: newQuotation });
     } catch (error) {
         res.status(500).json({ success: false, message: "Failed to create quotation", error: error.message });
@@ -77,7 +95,7 @@ const getAllQuotations = async (req, res) => {
 // Get quotation by ID
 const getQuotationById = async (req, res) => {
     try {
-        const quotation = await Quotation.findById(req.params.id).populate("leadId");
+        const quotation = await Quotation.findById(req.params.id).populate("leadId", "leadName email contactNumber");
         if (!quotation) {
             return res.status(404).json({ success: false, message: "Quotation not found" });
         }
@@ -90,7 +108,13 @@ const getQuotationById = async (req, res) => {
 // Update quotation
 const updateQuotation = async (req, res) => {
     try {
-        const quotation = await Quotation.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const updateData = { ...req.body };
+        if (updateData.leadId && typeof updateData.leadId === 'object') {
+            updateData.leadId = updateData.leadId._id;
+        }
+
+        const quotation = await Quotation.findByIdAndUpdate(req.params.id, updateData, { new: true })
+            .populate("leadId", "leadName email contactNumber");
         if (!quotation) {
             return res.status(404).json({ success: false, message: "Quotation not found" });
         }
@@ -113,4 +137,60 @@ const deleteQuotation = async (req, res) => {
     }
 };
 
-export { createQuotation, getAllQuotations, getQuotationById, updateQuotation, deleteQuotation };
+// Send quotation via email
+const sendQuotationEmail = async (req, res) => {
+    try {
+        const quotation = await Quotation.findById(req.params.id).populate("leadId", "leadName email contactNumber");
+        if (!quotation) {
+            return res.status(404).json({ success: false, message: "Quotation not found" });
+        }
+
+        const recipientEmail = req.body.email || quotation.leadId?.email;
+        if (!recipientEmail) {
+            return res.status(400).json({ success: false, message: "Recipient email address is required" });
+        }
+
+        const clientName = quotation.leadId?.leadName || "Valued Client";
+        const quotationNo = quotation.quotationNo || "Quotation";
+        const projectName = quotation.projectName || "Project Estimation";
+        const totalAmount = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(quotation.totalAmount || 0);
+
+        const emailResult = await sendQuotationEmailService({
+            email: recipientEmail,
+            clientName,
+            projectName,
+            quotationNo,
+            projectType: quotation.projectType || "Web Development & IT Services",
+            totalAmount,
+            subject: req.body.subject,
+            message: req.body.message,
+            pdfBase64: req.body.pdfBase64
+        });
+
+        if (!emailResult.success) {
+            return res.status(500).json({
+                success: false,
+                message: "Failed to send quotation email: " + (emailResult.error || "Email service error")
+            });
+        }
+
+        // Resiliently update status in database
+        try {
+            await Quotation.findByIdAndUpdate(req.params.id, { status: "Sent" });
+            quotation.status = "Sent";
+        } catch (dbErr) {
+            console.warn(`[sendQuotationEmail] Status update warning: ${dbErr.message}`);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: `Quotation sent successfully to ${recipientEmail}`,
+            quotation
+        });
+    } catch (error) {
+        console.error("[sendQuotationEmail] Error sending email:", error);
+        return res.status(500).json({ success: false, message: "Failed to send quotation email", error: error.message });
+    }
+};
+
+export { createQuotation, getAllQuotations, getQuotationById, updateQuotation, deleteQuotation, sendQuotationEmail };

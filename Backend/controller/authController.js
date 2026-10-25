@@ -3,14 +3,9 @@ import Employee from "../model/employeeModel.js";
 import Intern from "../model/internModel.js";
 import OTP from "../model/otpModel.js";
 import bcrypt from "bcrypt";
-import nodemailer from "nodemailer";
+import { sendPasswordResetOTP } from "../utils/emailService.js";
 import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from 'url';
 import jwt from "jsonwebtoken";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -89,35 +84,6 @@ const unifiedLogin = async (req, res) => {
     }
 };
 
-import fs from "fs";
-
-// Singleton cached transporter
-let cachedTransporter = null;
-
-const getTransporter = () => {
-    const user = process.env.EMAIL_USER;
-    const pass = process.env.EMAIL_PASS;
-    const isPlaceholder = user?.includes('your-email') || pass?.includes('your-gmail-app-password');
-
-    if (!user || !pass || isPlaceholder) {
-        return null;
-    }
-
-    if (!cachedTransporter) {
-        cachedTransporter = nodemailer.createTransport({
-            host: "smtp.gmail.com",
-            port: 465,
-            secure: true,
-            auth: { user, pass },
-            pool: true,
-            maxConnections: 5,
-            maxMessages: 100
-        });
-    }
-
-    return cachedTransporter;
-};
-
 // Forgot Password - Send OTP
 const forgotPassword = async (req, res) => {
     console.log("Forgot Password Request Received:", req.body);
@@ -159,73 +125,15 @@ const forgotPassword = async (req, res) => {
 
         console.log(`[OTP GENERATED] Code for ${email} (${role}): ${otp}`);
 
-        const transporter = getTransporter();
-
-        if (!transporter) {
-            console.warn("WARNING: Email service not configured. OTP logged to console above.");
-            return res.status(200).json({
-                message: "OTP generated (Check server console: email service not configured)",
-                dev_note: "Email service not configured in .env"
-            });
-        }
-
-        const logoPath = path.join(__dirname, "../../frontend/public/webfloralogo.png");
-        const hasLocalLogo = fs.existsSync(logoPath);
-
-        const mailAttachments = [];
-        if (hasLocalLogo) {
-            mailAttachments.push({
-                filename: 'webfloralogo.png',
-                path: logoPath,
-                cid: 'webfloralogo'
-            });
-        }
-
-        const logoHtml = hasLocalLogo 
-            ? '<img src="cid:webfloralogo" alt="Webflora Logo" style="max-height: 50px; width: auto; margin-bottom: 15px;">'
-            : '<img src="https://crm.webfloratechnologies.com/webfloralogo.png" alt="Webflora Logo" style="max-height: 50px; width: auto; margin-bottom: 15px;">';
-
-        const mailOptions = {
-            from: `"Webflora Support" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: "Password Reset Verification Code - Webflora",
-            html: `
-                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; color: #333;">
-                    <div style="background-color: #0f172a; padding: 30px; text-align: center; border-bottom: 2px solid #ff4e1b;">
-                        ${logoHtml}
-                        <h2 style="margin: 0; color: #ffffff; font-size: 24px;">Verification Code</h2>
-                    </div>
-                    <div style="padding: 40px 30px; background-color: #ffffff; text-align: center;">
-                        <p style="font-size: 16px; line-height: 1.6; color: #525f7f; margin-bottom: 30px;">
-                            We received a request to reset your password. Please use the verification code below to proceed. 
-                            <strong>This code is valid for 10 minutes.</strong>
-                        </p>
-                        <div style="background-color: #f1f3f9; padding: 25px; border-radius: 12px; display: inline-block; margin-bottom: 30px;">
-                            <span style="font-size: 36px; font-weight: 700; letter-spacing: 6px; color: #ff4e1b;">${otp}</span>
-                        </div>
-                        <p style="font-size: 14px; color: #8898aa; line-height: 1.6;">
-                            If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
-                        </p>
-                    </div>
-                    <div style="background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #adb5bd; border-top: 1px solid #e9ecef;">
-                        <p style="margin: 0;">&copy; ${new Date().getFullYear()} Webflora Technologies. All rights reserved.</p>
-                        <p style="margin: 5px 0 0;">Best for Everyone</p>
-                    </div>
-                </div>
-            `,
-            attachments: mailAttachments
-        };
-
-        try {
-            await transporter.sendMail(mailOptions);
-            return res.status(200).json({ message: "OTP sent successfully to your email" });
-        } catch (mailError) {
-            console.error("Nodemailer Error:", mailError);
+        // Dispatch OTP via centralized Hostinger email service
+        const emailResult = await sendPasswordResetOTP(email, otp);
+        if (!emailResult.success) {
             return res.status(500).json({
-                message: "Failed to send OTP to your email: " + (mailError.message || "Email service error")
+                message: "Failed to send OTP to your email: " + (emailResult.error || "Email service error")
             });
         }
 
+        return res.status(200).json({ message: "OTP sent successfully to your email" });
     } catch (error) {
         console.error("Critical Forgot Password Error:", error);
         return res.status(500).json({ message: "Internal server error", error: error.message });

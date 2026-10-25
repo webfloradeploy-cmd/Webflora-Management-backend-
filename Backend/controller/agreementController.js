@@ -1,24 +1,10 @@
 import Agreement from "../model/agreementModel.js";
 import Counter from "../model/counterModel.js";
 import Admin from "../model/adminModel.js";
-import nodemailer from "nodemailer";
+import { sendAgreementEmail as sendAgreementEmailService } from "../utils/emailService.js";
 import dotenv from "dotenv";
 
 dotenv.config();
-
-// Helper to get mail transporter
-const getTransporter = () => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    return null;
-  }
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-};
 
 // Create a new agreement
 export const createAgreement = async (req, res) => {
@@ -281,53 +267,26 @@ export const sendAgreementEmail = async (req, res) => {
       return res.status(404).json({ success: false, message: "Agreement not found" });
     }
 
-    const transporter = getTransporter();
-    if (!transporter) {
-      return res.status(400).json({
-        success: false,
-        message: "SMTP Mailer credentials missing from environment setup (.env)",
-      });
+    if (!agreement.clientInfo?.email) {
+      return res.status(400).json({ success: false, message: "Client email is required to send agreement" });
     }
 
-    const frontendUrl = "https://webflora-management-frontend.vercel.app";
-    const mailOptions = {
-      from: `"Webflora Legal & Agreements" <${process.env.EMAIL_USER}>`,
-      to: agreement.clientInfo.email,
-      subject: `Action Required: IT Service Agreement - ${agreement.projectInfo.title} (${agreement.agreementId})`,
-      html: `
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1f2937; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; background-color: #ffffff;">
-          <div style="background-color: #ff5f1f; color: white; padding: 35px; text-align: center;">
-            <h1 style="margin: 0; font-size: 26px; font-weight: 800;">IT Service Agreement</h1>
-            <p style="margin: 5px 0 0 0; opacity: 0.9;">Document Ref: ${agreement.agreementId}</p>
-          </div>
-          <div style="padding: 40px;">
-            <p style="font-size: 16px;">Dear <strong>${agreement.clientInfo.clientName}</strong>,</p>
-            <p>We are excited to partner with you on the project <strong>"${agreement.projectInfo.title}"</strong>. To proceed formally, we have generated the IT Service Agreement for your review and digital signature.</p>
-            
-            <div style="background-color: #fcf6f2; padding: 25px; border-radius: 16px; margin: 30px 0; border: 1px solid #ffedd5;">
-              <p style="margin: 0 0 12px 0; font-weight: 800; color: #ff5f1f; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em;">Agreement Highlights</p>
-              <p style="margin: 5px 0; font-size: 14px;"><strong>Company:</strong> ${agreement.companyInfo.companyName}</p>
-              <p style="margin: 5px 0; font-size: 14px;"><strong>Client:</strong> ${agreement.clientInfo.companyName || agreement.clientInfo.clientName}</p>
-              <p style="margin: 5px 0; font-size: 14px;"><strong>Project Type:</strong> ${agreement.projectInfo.projectType}</p>
-              <p style="margin: 5px 0; font-size: 14px;"><strong>Contract Value:</strong> INR ${agreement.payment.totalCost.toLocaleString("en-IN")}</p>
-            </div>
+    const emailResult = await sendAgreementEmailService({
+      email: agreement.clientInfo.email,
+      clientName: agreement.clientInfo.clientName,
+      clientCompanyName: agreement.clientInfo.companyName,
+      projectTitle: agreement.projectInfo?.title || "IT Project",
+      agreementId: agreement.agreementId,
+      projectType: agreement.projectInfo?.projectType || "IT Services",
+      totalCost: agreement.payment?.totalCost || 0
+    });
 
-            <p style="font-size: 15px;">Please review the complete legal contract, payment schedules, and deliverables. You can view and sign the document online using the secure link below:</p>
-            
-            <div style="text-align: center; margin: 35px 0;">
-              <a href="${frontendUrl}/agreements" style="background-color: #ff5f1f; color: white; padding: 15px 30px; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px; display: inline-block; box-shadow: 0 8px 12px rgba(255, 95, 31, 0.2);">Review & E-Sign Contract</a>
-            </div>
-
-            <p style="font-size: 13px; color: #6b7280; text-align: center;">This link will direct you to the secure Webflora Portal for authentication and digital signing.</p>
-          </div>
-          <div style="background-color: #f9fafb; color: #94a3b8; padding: 20px; text-align: center; font-size: 12px; border-top: 1px solid #f1f5f9;">
-            &copy; ${new Date().getFullYear()} Webflora Technologies &bull; Secure Digital Signature Portal.
-          </div>
-        </div>
-      `,
-    };
-
-    await transporter.sendMail(mailOptions);
+    if (!emailResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send agreement email: " + (emailResult.error || "Email service error")
+      });
+    }
 
     agreement.status = "Sent";
     agreement.auditLogs.push({

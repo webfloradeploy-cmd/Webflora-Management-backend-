@@ -21,6 +21,8 @@ import expenseRoutes from './route/expenseRoute.js';
 import leadRoutes from './route/leadRoute.js';
 import quotationRoutes from './route/quotationRoute.js';
 import agreementRoutes from './route/agreementRoute.js';
+import { verifyEmailConfig } from './utils/emailService.js';
+
 dotenv.config();
 
 const app = express();
@@ -84,6 +86,11 @@ app.use('/api/agreement', agreementRoutes);
 
 // Connect to MongoDB
 connectDB();
+
+// Run SMTP verification diagnostic check (non-blocking)
+verifyEmailConfig().catch(err => {
+    console.warn('[SMTP Startup Diagnostic Warning]:', err.message);
+});
 
 const PORT = process.env.PORT || 5001;
 
