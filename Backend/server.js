@@ -28,17 +28,31 @@ dotenv.config();
 const app = express();
 
 // Middleware
-const allowedOrigins = ['http://localhost:5173', 'http://localhost:8080', 'https://webflora-management-frontend.vercel.app', 'https://crm.webfloratechnologies.com'];
+const allowedOrigins = [
+    'http://localhost:5173', 
+    'http://localhost:8080', 
+    'http://localhost:8081', 
+    'https://webflora-management-frontend.vercel.app', 
+    'https://crm.webfloratechnologies.com'
+];
+
+const checkCorsOrigin = (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, origin);
+    // Allow any localhost or 127.0.0.1 port (for local dev)
+    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, origin);
+    }
+    // Allow vercel preview / production domains
+    if (origin.endsWith('.vercel.app')) {
+        return callback(null, origin);
+    }
+    return callback(null, false);
+};
 
 app.use(cors({
-    origin: function (origin, callback) {
-        // Allow requests with no origin (mobile apps, curl, etc.)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, origin);
-        }
-        return callback(null, false);
-    },
+    origin: checkCorsOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -46,13 +60,7 @@ app.use(cors({
 
 // Explicit preflight handler for all routes
 app.options('{*path}', cors({
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, origin);
-        }
-        return callback(null, false);
-    },
+    origin: checkCorsOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization']
