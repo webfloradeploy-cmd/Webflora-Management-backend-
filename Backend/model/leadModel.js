@@ -12,9 +12,10 @@ const leadSchema = new mongoose.Schema({
     },
     email: {
         type: String,
-        required: true,
+        required: false,
         lowercase: true,
-        unique: true
+        trim: true,
+        default: ""
     },
     address: {
         type: String,
@@ -118,4 +119,9 @@ const leadSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-export default mongoose.model("lead", leadSchema);
+const Lead = mongoose.model("lead", leadSchema);
+
+// Safely drop existing unique email index if it was previously created
+Lead.collection.dropIndex("email_1").catch(() => {});
+
+export default Lead;

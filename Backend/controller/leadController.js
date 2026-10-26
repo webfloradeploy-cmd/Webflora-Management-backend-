@@ -10,7 +10,7 @@ const createLead = async (req, res) => {
         const newLead = new Lead({
             leadName,
             contactNumber,
-            email,
+            email: email ? email.trim() : "",
             address: address || "",
             source: source || "",
             notes: notes || "",
