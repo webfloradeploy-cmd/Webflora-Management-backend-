@@ -74,6 +74,24 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.get('/', (req, res) => {
     res.send('Hello From Backend!');
 });
+
+// Database connection middleware for Serverless resilience
+app.use(async (req, res, next) => {
+    if (req.path === '/' || req.method === 'OPTIONS') {
+        return next();
+    }
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        console.error('[DB Middleware Error]:', err.message);
+        return res.status(500).json({
+            message: "Database connection failed. Please try again.",
+            error: err.message
+        });
+    }
+});
+
 app.use('/api/admin', adminRoutes);
 app.use('/api/employee', employeeRoutes);
 app.use('/api/communication', communicationRoutes);
@@ -96,19 +114,21 @@ app.use('/api/settings', settingsRoute);
 
 
 // Connect to MongoDB & backfill missing employee/intern unique IDs & harmonize statuses
-connectDB()
-    .then(() => {
-        backfillUniqueIds().catch(err => console.error('[ID Backfill Warning]:', err.message));
-        syncProjectAndHandoverStatuses().catch(err => console.error('[Status Sync Warning]:', err.message));
-    })
-    .catch(err => {
-        console.error('MongoDB connection error:', err);
-    });
+if (!process.env.VERCEL) {
+    connectDB()
+        .then(() => {
+            backfillUniqueIds().catch(err => console.error('[ID Backfill Warning]:', err.message));
+            syncProjectAndHandoverStatuses().catch(err => console.error('[Status Sync Warning]:', err.message));
+        })
+        .catch(err => {
+            console.error('MongoDB connection error:', err);
+        });
 
-// Run SMTP verification diagnostic check (non-blocking)
-verifyEmailConfig().catch(err => {
-    console.warn('[SMTP Startup Diagnostic Warning]:', err.message);
-});
+    // Run SMTP verification diagnostic check (non-blocking)
+    verifyEmailConfig().catch(err => {
+        console.warn('[SMTP Startup Diagnostic Warning]:', err.message);
+    });
+}
 
 const PORT = process.env.PORT || 5001;
 

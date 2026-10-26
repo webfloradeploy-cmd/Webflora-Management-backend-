@@ -90,20 +90,35 @@ const forgotPassword = async (req, res) => {
     try {
         const { email: rawEmail, role } = req.body;
 
-        if (!rawEmail || !role) {
-            return res.status(400).json({ message: "Email and role are required" });
+        if (!rawEmail) {
+            return res.status(400).json({ message: "Email is required" });
         }
 
         const email = rawEmail.toLowerCase().trim();
+        let finalRole = (role || "").toLowerCase().trim();
 
-        // Validate if user exists based on role
-        let user;
-        if (role === "admin") user = await Admin.findOne({ email });
-        else if (role === "employee") user = await Employee.findOne({ email });
-        else if (role === "intern") user = await Intern.findOne({ email });
+        // 1. Check specified role first
+        let user = null;
+        if (finalRole === "admin") user = await Admin.findOne({ email });
+        else if (finalRole === "employee") user = await Employee.findOne({ email });
+        else if (finalRole === "intern") user = await Intern.findOne({ email });
+
+        // 2. Auto-detect fallback across all roles if not found under selected tab
+        if (!user) {
+            user = await Admin.findOne({ email });
+            if (user) finalRole = "admin";
+        }
+        if (!user) {
+            user = await Employee.findOne({ email });
+            if (user) finalRole = "employee";
+        }
+        if (!user) {
+            user = await Intern.findOne({ email });
+            if (user) finalRole = "intern";
+        }
 
         if (!user) {
-            console.log(`User not found: ${email} with role ${role}`);
+            console.log(`User not found: ${email}`);
             return res.status(404).json({ message: "No account found with this email" });
         }
 
@@ -114,8 +129,8 @@ const forgotPassword = async (req, res) => {
         // Store OTP in database
         try {
             await OTP.findOneAndUpdate(
-                { email, role },
-                { otp, expiresAt, attempts: 0 },
+                { email },
+                { otp, role: finalRole, expiresAt, attempts: 0 },
                 { upsert: true, new: true }
             );
         } catch (dbError) {
@@ -123,7 +138,7 @@ const forgotPassword = async (req, res) => {
             return res.status(500).json({ message: "Failed to save verification code. Please try again." });
         }
 
-        console.log(`[OTP GENERATED] Code for ${email} (${role}): ${otp}`);
+        console.log(`[OTP GENERATED] Code for ${email} (${finalRole}): ${otp}`);
 
         // Dispatch OTP via centralized Hostinger email service
         const emailResult = await sendPasswordResetOTP(email, otp);
@@ -133,7 +148,10 @@ const forgotPassword = async (req, res) => {
             });
         }
 
-        return res.status(200).json({ message: "OTP sent successfully to your email" });
+        return res.status(200).json({ 
+            message: "OTP sent successfully to your email",
+            role: finalRole 
+        });
     } catch (error) {
         console.error("Critical Forgot Password Error:", error);
         return res.status(500).json({ message: "Internal server error", error: error.message });
@@ -144,11 +162,16 @@ const forgotPassword = async (req, res) => {
 const verifyOTP = async (req, res) => {
     try {
         const { email: rawEmail, otp, role } = req.body;
-        if (!rawEmail || !otp || !role) return res.status(400).json({ message: "All fields are required" });
+        if (!rawEmail || !otp) return res.status(400).json({ message: "Email and OTP are required" });
 
         const email = rawEmail.toLowerCase().trim();
 
-        const otpRecord = await OTP.findOne({ email, role });
+        // Search by email and role or fallback to email
+        let otpRecord = await OTP.findOne({ email, ...(role ? { role } : {}) });
+        if (!otpRecord) {
+            otpRecord = await OTP.findOne({ email });
+        }
+
         if (!otpRecord) return res.status(400).json({ message: "Invalid code or request expired" });
 
         if (otpRecord.expiresAt < new Date()) {
@@ -166,7 +189,7 @@ const verifyOTP = async (req, res) => {
             return res.status(400).json({ message: "Incorrect code" });
         }
 
-        res.status(200).json({ message: "OTP verified successfully" });
+        res.status(200).json({ message: "OTP verified successfully", role: otpRecord.role });
     } catch (error) {
         res.status(500).json({ message: "Verification failed", error: error.message });
     }
@@ -176,22 +199,31 @@ const verifyOTP = async (req, res) => {
 const resetPassword = async (req, res) => {
     try {
         const { email: rawEmail, role, newPassword, otp } = req.body;
-        if (!rawEmail || !role || !newPassword || !otp) return res.status(400).json({ message: "All fields are required" });
+        if (!rawEmail || !newPassword || !otp) return res.status(400).json({ message: "All fields are required" });
 
         const email = rawEmail.toLowerCase().trim();
 
-        const otpRecord = await OTP.findOne({ email, role, otp: otp.trim() });
+        let otpRecord = await OTP.findOne({ email, otp: otp.trim() });
         if (!otpRecord || otpRecord.expiresAt < new Date()) {
             return res.status(400).json({ message: "Invalid session or OTP expired. Please start over." });
         }
 
+        const targetRole = otpRecord.role || (role ? role.toLowerCase() : "");
+
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-        let user;
-        if (role === "admin") user = await Admin.findOneAndUpdate({ email }, { password: hashedPassword });
-        else if (role === "employee") user = await Employee.findOneAndUpdate({ email }, { password: hashedPassword });
-        else if (role === "intern") user = await Intern.findOneAndUpdate({ email }, { password: hashedPassword });
+        let user = null;
+        if (targetRole === "admin") user = await Admin.findOneAndUpdate({ email }, { password: hashedPassword });
+        else if (targetRole === "employee") user = await Employee.findOneAndUpdate({ email }, { password: hashedPassword });
+        else if (targetRole === "intern") user = await Intern.findOneAndUpdate({ email }, { password: hashedPassword });
+
+        if (!user) {
+            // Fallback: search across all roles
+            user = await Admin.findOneAndUpdate({ email }, { password: hashedPassword });
+            if (!user) user = await Employee.findOneAndUpdate({ email }, { password: hashedPassword });
+            if (!user) user = await Intern.findOneAndUpdate({ email }, { password: hashedPassword });
+        }
 
         if (!user) return res.status(404).json({ message: "User not found" });
 

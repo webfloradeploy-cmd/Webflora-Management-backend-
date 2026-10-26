@@ -62,6 +62,8 @@ export const getTransporter = () => {
         console.warn('[SMTP Config Warning] EMAIL_PASS is not set in environment variables.');
     }
 
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
     transporterInstance = nodemailer.createTransport({
         host,
         port,
@@ -70,8 +72,8 @@ export const getTransporter = () => {
             user,
             pass
         },
-        pool: true,
-        maxConnections: 5,
+        pool: !isServerless,
+        maxConnections: isServerless ? 1 : 5,
         maxMessages: 100,
         rateLimit: 10,
         connectionTimeout: 15000,
