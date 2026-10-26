@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import Salary from "../model/salaryModel.js";
 import { sendWelcomeEmail } from "../utils/emailService.js";
+import { generateEmployeeId } from "../utils/idGenerator.js";
 
 // Create employee
 const createEmployee = async (req, res) => {
@@ -26,8 +27,33 @@ const createEmployee = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
+        // Auto-generate unique Employee ID (e.g. EMP-001)
+        const employeeId = req.body.employeeId || await generateEmployeeId();
+
         const newEmployee = new Employee({
-            name, email, password: hashedPassword, role, phone, address, salary
+            employeeId,
+            name, email, password: hashedPassword, role, phone, address, salary,
+            status: req.body.status || "active",
+            jobRole: req.body.jobRole || "",
+            department: req.body.department || "",
+            joiningDate: req.body.joiningDate || new Date(),
+            fatherName: req.body.fatherName || "",
+            motherName: req.body.motherName || "",
+            dob: req.body.dob || null,
+            gender: req.body.gender || "",
+            bloodGroup: req.body.bloodGroup || "",
+            emergencyPhone: req.body.emergencyPhone || "",
+            aadhaarNumber: req.body.aadhaarNumber || "",
+            panNumber: req.body.panNumber || "",
+            bio: req.body.bio || "",
+            qualification: req.body.qualification || "",
+            stream: req.body.stream || "",
+            institution: req.body.institution || "",
+            passingYear: req.body.passingYear || "",
+            gradePercentage: req.body.gradePercentage || "",
+            bankName: req.body.bankName || "",
+            accountNumber: req.body.accountNumber || "",
+            ifscCode: req.body.ifscCode || ""
         });
         await newEmployee.save();
 
@@ -40,10 +66,11 @@ const createEmployee = async (req, res) => {
             })
             .catch(err => console.error("Email background error:", err));
 
-        const { _id, createdAt, updatedAt } = newEmployee;
+        const empObj = newEmployee.toObject();
+        delete empObj.password;
         res.status(201).json({
             message: "Employee created successfully",
-            employee: { _id, name, email, role, phone, address, salary, createdAt, updatedAt }
+            employee: empObj
         });
 
     } catch (error) {
@@ -128,7 +155,13 @@ const getEmployee = async (req, res) => {
 const updateEmployee = async (req, res) => {
     try {
         const { id } = req.params;
-        let { name, email, password, role, phone, address, salary } = req.body;
+        let { 
+            name, email, password, role, phone, address, salary, status,
+            jobRole, department, joiningDate, fatherName, motherName, dob, gender, bloodGroup,
+            emergencyPhone, aadhaarNumber, panNumber, bio,
+            qualification, stream, institution, passingYear, gradePercentage,
+            bankName, accountNumber, ifscCode
+        } = req.body;
 
         const employee = await Employee.findById(id);
         if (!employee) {
@@ -149,13 +182,36 @@ const updateEmployee = async (req, res) => {
         employee.phone = phone || employee.phone;
         employee.address = address || employee.address;
         employee.salary = salary || employee.salary;
+        if (req.body.employeeId !== undefined && req.body.employeeId.trim()) employee.employeeId = req.body.employeeId.trim();
+        if (status !== undefined) employee.status = status;
+        if (jobRole !== undefined) employee.jobRole = jobRole;
+        if (department !== undefined) employee.department = department;
+        if (joiningDate !== undefined) employee.joiningDate = joiningDate;
+        if (fatherName !== undefined) employee.fatherName = fatherName;
+        if (motherName !== undefined) employee.motherName = motherName;
+        if (dob !== undefined) employee.dob = dob;
+        if (gender !== undefined) employee.gender = gender;
+        if (bloodGroup !== undefined) employee.bloodGroup = bloodGroup;
+        if (emergencyPhone !== undefined) employee.emergencyPhone = emergencyPhone;
+        if (aadhaarNumber !== undefined) employee.aadhaarNumber = aadhaarNumber;
+        if (panNumber !== undefined) employee.panNumber = panNumber;
+        if (bio !== undefined) employee.bio = bio;
+        if (qualification !== undefined) employee.qualification = qualification;
+        if (stream !== undefined) employee.stream = stream;
+        if (institution !== undefined) employee.institution = institution;
+        if (passingYear !== undefined) employee.passingYear = passingYear;
+        if (gradePercentage !== undefined) employee.gradePercentage = gradePercentage;
+        if (bankName !== undefined) employee.bankName = bankName;
+        if (accountNumber !== undefined) employee.accountNumber = accountNumber;
+        if (ifscCode !== undefined) employee.ifscCode = ifscCode;
 
         await employee.save();
 
-        const { _id, createdAt, updatedAt } = employee;
+        const empObj = employee.toObject();
+        delete empObj.password;
         res.status(200).json({
             message: "Employee updated successfully",
-            employee: { _id, name: employee.name, email: employee.email, role: employee.role, phone: employee.phone, address: employee.address, salary: employee.salary, createdAt, updatedAt }
+            employee: empObj
         });
     } catch (error) {
         res.status(500).json({ message: "Failed to update employee", error: error.message });
@@ -217,14 +273,54 @@ const getEmployeeById = async (req, res) => {
     }
 };
 
+// Toggle employee active/inactive status
+const toggleEmployeeStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const employee = await Employee.findById(id);
+        if (!employee) {
+            return res.status(404).json({ message: "Employee not found" });
+        }
+
+        const newStatus = employee.status === "inactive" ? "active" : "inactive";
+        employee.status = newStatus;
+        await employee.save();
+
+        res.status(200).json({
+            message: `Employee marked as ${newStatus}`,
+            status: newStatus,
+            employee: {
+                _id: employee._id,
+                name: employee.name,
+                email: employee.email,
+                role: employee.role,
+                status: employee.status
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to toggle employee status", error: error.message });
+        console.error(error);
+    }
+};
+
 // List employees (Lightweight for selection)
 const listEmployees = async (req, res) => {
     try {
-        const employees = await Employee.find({}, 'name role _id').lean();
+        const query = req.query.all === 'true' ? {} : { status: { $ne: 'inactive' } };
+        const employees = await Employee.find(query, 'name role status _id').lean();
         res.status(200).json({ employees });
     } catch (error) {
         res.status(500).json({ message: "Failed to list employees", error: error.message });
     }
 };
 
-export { createEmployee, loginEmployee, getEmployee, getEmployeeById, updateEmployee, deleteEmployee, listEmployees };
+export { 
+    createEmployee, 
+    loginEmployee, 
+    getEmployee, 
+    getEmployeeById, 
+    updateEmployee, 
+    deleteEmployee, 
+    listEmployees,
+    toggleEmployeeStatus
+};

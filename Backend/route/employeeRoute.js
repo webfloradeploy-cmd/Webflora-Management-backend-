@@ -6,7 +6,8 @@ import {
   getEmployeeById,
   deleteEmployee,
   updateEmployee,
-  listEmployees
+  listEmployees,
+  toggleEmployeeStatus
 } from "../controller/employeeController.js";
 import authMiddleware from "../middleware/auth.js";
 
@@ -32,6 +33,9 @@ router.get("/list", authMiddleware(['admin', 'employee', 'intern']), listEmploye
 
 // Update employee by ID (Admin only)
 router.put("/:id", authMiddleware(['admin']), updateEmployee);
+
+// Toggle employee status (Admin only)
+router.patch("/:id/status", authMiddleware(['admin']), toggleEmployeeStatus);
 
 // Delete employee by ID (Admin only)
 router.delete("/:id", authMiddleware(['admin']), deleteEmployee);

@@ -22,8 +22,81 @@ const leadSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ["New", "Contacted", "Interested", "Closed", "Lost"],
+        enum: ["New", "Contacted", "Interested", "Not Interested", "Quotation Requested", "Quotation Approved", "Closed", "Lost"],
         default: "New"
+    },
+    interestStatus: {
+        type: String,
+        enum: ["Interested", "Not Interested", "Under Consideration", "Pending"],
+        default: "Pending"
+    },
+    followUpDate: {
+        type: Date,
+        default: null
+    },
+    followUps: [{
+        followUpDate: {
+            type: Date,
+            default: Date.now
+        },
+        notes: {
+            type: String,
+            default: ""
+        },
+        interestStatus: {
+            type: String,
+            enum: ["Interested", "Not Interested", "Under Consideration", "Pending"],
+            default: "Pending"
+        },
+        nextFollowUpDate: {
+            type: Date,
+            default: null
+        },
+        conductedBy: {
+            id: { type: mongoose.Schema.Types.ObjectId },
+            name: { type: String, default: "" },
+            role: { type: String, default: "" }
+        },
+        createdAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    lastFollowUp: {
+        followUpDate: { type: Date, default: null },
+        conductedByName: { type: String, default: "" },
+        notes: { type: String, default: "" }
+    },
+    quotationRequest: {
+        status: {
+            type: String,
+            enum: ["None", "Requested", "Approved", "Rejected"],
+            default: "None"
+        },
+        requestedBy: {
+            type: String,
+            default: ""
+        },
+        requestedAt: {
+            type: Date,
+            default: null
+        },
+        notes: {
+            type: String,
+            default: ""
+        },
+        approvedBy: {
+            type: String,
+            default: ""
+        },
+        approvedAt: {
+            type: Date,
+            default: null
+        },
+        rejectionReason: {
+            type: String,
+            default: ""
+        }
     },
     source: {
         type: String,
@@ -36,7 +109,12 @@ const leadSchema = new mongoose.Schema({
     adminId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "admin",
-        required: true
+        required: false
+    },
+    createdBy: {
+        id: { type: mongoose.Schema.Types.ObjectId },
+        name: { type: String, default: "" },
+        role: { type: String, default: "" }
     }
 }, { timestamps: true });
 

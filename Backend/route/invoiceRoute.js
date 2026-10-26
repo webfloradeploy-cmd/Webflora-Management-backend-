@@ -6,11 +6,11 @@ const router = express.Router();
 
 router.post('/', authMiddleware(["admin"]), AddInvoice);
 
-router.get('/project/:projectId', authMiddleware(["admin"]), getInvoicesByProject);
+router.get('/project/:projectId', authMiddleware(["admin", "employee"]), getInvoicesByProject);
 
-router.get('/:id', authMiddleware(["admin"]), getInvoice);
+router.get('/:id', authMiddleware(["admin", "employee"]), getInvoice);
 
-router.get('/', authMiddleware(["admin"]), getAllInvoice);
+router.get('/', authMiddleware(["admin", "employee"]), getAllInvoice);
 
 router.put('/update/:id', authMiddleware(["admin"]), updateInvoice);
 

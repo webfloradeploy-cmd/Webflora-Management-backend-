@@ -1,5 +1,7 @@
 import projectModel from '../model/projectModel.js';
 import invoiceModel from '../model/invoiceModel.js';
+import Employee from '../model/employeeModel.js';
+import Handover from '../model/handoverModel.js';
 
 // Add Project
 const Addproject = async (req, res) => {
@@ -8,6 +10,16 @@ const Addproject = async (req, res) => {
 
         if (!projectName || !client) {
             return res.status(400).json({ message: "Project Name and Client are required" });
+        }
+
+        // Prevent assigning project to inactive employees
+        if (assignedTeam && Array.isArray(assignedTeam) && assignedTeam.length > 0) {
+            const inactive = await Employee.find({ _id: { $in: assignedTeam }, status: 'inactive' });
+            if (inactive.length > 0) {
+                return res.status(400).json({ 
+                    message: `Cannot assign project to inactive employee(s): ${inactive.map(e => e.name).join(', ')}` 
+                });
+            }
         }
 
         const newProject = new projectModel({
@@ -102,10 +114,25 @@ const updateProject = async (req, res) => {
         const { id } = req.params;
         const updateData = req.body;
 
+        // Prevent assigning project to inactive employees
+        if (updateData.assignedTeam && Array.isArray(updateData.assignedTeam) && updateData.assignedTeam.length > 0) {
+            const inactive = await Employee.find({ _id: { $in: updateData.assignedTeam }, status: 'inactive' });
+            if (inactive.length > 0) {
+                return res.status(400).json({ 
+                    message: `Cannot assign project to inactive employee(s): ${inactive.map(e => e.name).join(', ')}` 
+                });
+            }
+        }
+
         const project = await projectModel.findByIdAndUpdate(id, updateData, { new: true });
 
         if (!project) {
             return res.status(404).json({ message: "Project not found" });
+        }
+
+        // Sync status to all handovers of this project
+        if (updateData.status) {
+            await Handover.updateMany({ projectId: project._id }, { status: updateData.status });
         }
 
         const invoices = await invoiceModel.find({ projectId: project._id });

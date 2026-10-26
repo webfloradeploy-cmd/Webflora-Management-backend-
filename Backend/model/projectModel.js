@@ -14,7 +14,7 @@ const projectSchema = new mongoose.Schema({
   techStack: [String],
   status: {
     type: String,
-    enum: ["New", "In Progress", "On Hold", "Completed"],
+    enum: ["New", "In Progress", "Completed", "On Hold", "Handed Over", "Revoked"],
     default: "New"
   },
   assignedTeam: [{ type: mongoose.Schema.Types.ObjectId, ref: "employee" }],

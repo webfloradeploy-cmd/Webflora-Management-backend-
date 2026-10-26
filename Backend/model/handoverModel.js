@@ -35,7 +35,7 @@ const handoverSchema = new mongoose.Schema({
     instructions: String,
     status: {
         type: String,
-        enum: ["In Progress", "Handed Over", "Completed", "Revoked"],
+        enum: ["New", "In Progress", "Completed", "On Hold", "Handed Over", "Revoked"],
         default: "In Progress"
     }
 }, { timestamps: true });

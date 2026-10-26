@@ -21,7 +21,9 @@ import expenseRoutes from './route/expenseRoute.js';
 import leadRoutes from './route/leadRoute.js';
 import quotationRoutes from './route/quotationRoute.js';
 import agreementRoutes from './route/agreementRoute.js';
+import settingsRoute from './route/settingsRoute.js';
 import { verifyEmailConfig } from './utils/emailService.js';
+import { backfillUniqueIds, syncProjectAndHandoverStatuses } from './utils/idGenerator.js';
 
 dotenv.config();
 
@@ -90,10 +92,18 @@ app.use('/api/expense', expenseRoutes);
 app.use('/api/lead', leadRoutes);
 app.use('/api/quotation', quotationRoutes);
 app.use('/api/agreement', agreementRoutes);
+app.use('/api/settings', settingsRoute);
 
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB & backfill missing employee/intern unique IDs & harmonize statuses
+connectDB()
+    .then(() => {
+        backfillUniqueIds().catch(err => console.error('[ID Backfill Warning]:', err.message));
+        syncProjectAndHandoverStatuses().catch(err => console.error('[Status Sync Warning]:', err.message));
+    })
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+    });
 
 // Run SMTP verification diagnostic check (non-blocking)
 verifyEmailConfig().catch(err => {
