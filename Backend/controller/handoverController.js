@@ -93,7 +93,8 @@ export const getAllHandovers = async (req, res) => {
         const query = req.user.role === 'admin' ? {} : { assigneeId: req.user.id };
         const handovers = await Handover.find(query)
             .populate("projectId", "projectName status")
-            .populate("assigneeId", "name email");
+            .populate("assigneeId", "name email")
+            .sort({ createdAt: -1, _id: -1 });
 
         res.status(200).json(handovers);
     } catch (error) {

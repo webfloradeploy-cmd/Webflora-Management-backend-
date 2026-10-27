@@ -83,10 +83,10 @@ const Addclients = async (req, res) => {
 };
 
 
-// Get All Clients with financial summary
+// Get All Clients with financial summary (newest first)
 const getAllClient = async (req, res) => {
     try {
-        const clients = await Client.find();
+        const clients = await Client.find().sort({ createdAt: -1, _id: -1 });
         const projectModel = (await import("../model/projectModel.js")).default;
         const invoiceModel = (await import("../model/invoiceModel.js")).default;
 

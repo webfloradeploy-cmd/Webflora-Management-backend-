@@ -55,7 +55,8 @@ const getAllProjects = async (req, res) => {
     try {
         const projects = await projectModel.find()
             .populate('client')
-            .populate('assignedTeam');
+            .populate('assignedTeam')
+            .sort({ createdAt: -1, _id: -1 });
 
         // Calculate paid and due amounts for each project
         const projectsWithFinancials = await Promise.all(projects.map(async (project) => {

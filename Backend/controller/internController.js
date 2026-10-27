@@ -181,6 +181,9 @@ const getAllIntern = async (req, res) => {
           password: 0,
           payments: 0
         }
+      },
+      {
+        $sort: { createdAt: -1 }
       }
     ]);
     res.status(200).json({ interns });
