@@ -1,5 +1,6 @@
 import Client from "../model/clientModel.js";
 import Counter from "../model/counterModel.js";
+import { generateCustomerId } from "../utils/idGenerator.js";
 
 
 // Add Client
@@ -29,12 +30,15 @@ const Addclients = async (req, res) => {
             return res.status(409).json({ message: "Client already exists!" });
         }
 
+        const autoClientId = await generateCustomerId();
+
         const newClient = new Client({
             clientName,
             contactNumber,
             email,
             address,
-            referenceNo: refNo
+            referenceNo: refNo,
+            clientId: autoClientId
         });
 
         await newClient.save();

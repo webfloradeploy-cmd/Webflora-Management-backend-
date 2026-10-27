@@ -21,6 +21,11 @@ const clientSchema = new mongoose.Schema({
         default: "",
         required:true
     },
+    clientId: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
     referenceNo:{
         type:String,
         default: "",

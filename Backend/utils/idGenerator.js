@@ -1,5 +1,7 @@
 import Employee from "../model/employeeModel.js";
 import Intern from "../model/internModel.js";
+import Client from "../model/clientModel.js";
+import Lead from "../model/leadModel.js";
 import Handover from "../model/handoverModel.js";
 import projectModel from "../model/projectModel.js";
 
@@ -52,11 +54,60 @@ export const generateInternId = async () => {
 };
 
 /**
- * Auto-backfill existing employees and interns without an employeeId in MongoDB
+ * Generate next unique Customer / Client ID (e.g. CUST-001, CUST-002...)
+ */
+export const generateCustomerId = async () => {
+    try {
+        const clients = await Client.find({}, { clientId: 1, referenceNo: 1 }).lean();
+        let maxNum = 0;
+        for (const c of clients) {
+            const idToTest = c.clientId || c.referenceNo;
+            if (idToTest) {
+                const match = idToTest.match(/(?:CUST|CLI|REF)-?(\d+)/i);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxNum) maxNum = num;
+                }
+            }
+        }
+        const nextNum = maxNum + 1;
+        return `CUST-${String(nextNum).padStart(3, "0")}`;
+    } catch (err) {
+        console.error("[generateCustomerId] Error:", err);
+        return `CUST-${Date.now().toString().slice(-4)}`;
+    }
+};
+
+/**
+ * Generate next unique Lead ID (e.g. LEAD-001, LEAD-002...)
+ */
+export const generateLeadId = async () => {
+    try {
+        const leads = await Lead.find({}, { leadId: 1 }).lean();
+        let maxNum = 0;
+        for (const lead of leads) {
+            if (lead.leadId) {
+                const match = lead.leadId.match(/LEAD-(\d+)/i);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxNum) maxNum = num;
+                }
+            }
+        }
+        const nextNum = maxNum + 1;
+        return `LEAD-${String(nextNum).padStart(3, "0")}`;
+    } catch (err) {
+        console.error("[generateLeadId] Error:", err);
+        return `LEAD-${Date.now().toString().slice(-4)}`;
+    }
+};
+
+/**
+ * Auto-backfill existing employees, interns, customers/clients, and leads without a unique ID in MongoDB
  */
 export const backfillUniqueIds = async () => {
     try {
-        // Backfill employees
+        // 1. Backfill employees
         const employeesToBackfill = await Employee.find({
             $or: [
                 { employeeId: { $exists: false } },
@@ -87,7 +138,7 @@ export const backfillUniqueIds = async () => {
             console.log(`[ID Generator] Successfully assigned unique IDs to all employees.`);
         }
 
-        // Backfill interns
+        // 2. Backfill interns
         const internsToBackfill = await Intern.find({
             $or: [
                 { employeeId: { $exists: false } },
@@ -116,6 +167,68 @@ export const backfillUniqueIds = async () => {
                 await intern.save();
             }
             console.log(`[ID Generator] Successfully assigned unique IDs to all interns.`);
+        }
+
+        // 3. Backfill Customers / Clients
+        const clientsToBackfill = await Client.find({
+            $or: [
+                { clientId: { $exists: false } },
+                { clientId: null },
+                { clientId: "" }
+            ]
+        }).sort({ createdAt: 1, _id: 1 });
+
+        if (clientsToBackfill.length > 0) {
+            console.log(`[ID Generator] Backfilling unique Customer IDs for ${clientsToBackfill.length} customers/clients...`);
+            const existingClients = await Client.find({ clientId: { $exists: true, $ne: "" } }, { clientId: 1 }).lean();
+            let maxNumCust = 0;
+            for (const c of existingClients) {
+                if (c.clientId) {
+                    const match = c.clientId.match(/^CUST-(\d+)$/i);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxNumCust) maxNumCust = num;
+                    }
+                }
+            }
+
+            for (const client of clientsToBackfill) {
+                maxNumCust++;
+                client.clientId = `CUST-${String(maxNumCust).padStart(3, "0")}`;
+                await client.save();
+            }
+            console.log(`[ID Generator] Successfully assigned unique Customer IDs (CUST-XXX) to all clients.`);
+        }
+
+        // 4. Backfill Leads
+        const leadsToBackfill = await Lead.find({
+            $or: [
+                { leadId: { $exists: false } },
+                { leadId: null },
+                { leadId: "" }
+            ]
+        }).sort({ createdAt: 1, _id: 1 });
+
+        if (leadsToBackfill.length > 0) {
+            console.log(`[ID Generator] Backfilling unique IDs for ${leadsToBackfill.length} leads...`);
+            const existingLeads = await Lead.find({ leadId: { $exists: true, $ne: "" } }, { leadId: 1 }).lean();
+            let maxNumLead = 0;
+            for (const l of existingLeads) {
+                if (l.leadId) {
+                    const match = l.leadId.match(/^LEAD-(\d+)$/i);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxNumLead) maxNumLead = num;
+                    }
+                }
+            }
+
+            for (const lead of leadsToBackfill) {
+                maxNumLead++;
+                lead.leadId = `LEAD-${String(maxNumLead).padStart(3, "0")}`;
+                await lead.save();
+            }
+            console.log(`[ID Generator] Successfully assigned unique IDs (LEAD-XXX) to all leads.`);
         }
     } catch (err) {
         console.error("[ID Generator] Error in backfillUniqueIds:", err);

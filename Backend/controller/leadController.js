@@ -3,6 +3,7 @@ import Admin from "../model/adminModel.js";
 import Employee from "../model/employeeModel.js";
 import Settings from "../model/settingsModel.js";
 import { sendNewLeadEmail } from "../utils/emailService.js";
+import { generateLeadId } from "../utils/idGenerator.js";
 
 // Helper to retrieve all active staff/admins who have permission to access Leads
 const getLeadAccessRecipients = async () => {
@@ -50,8 +51,10 @@ const createLead = async (req, res) => {
         const userId = req.user.id;
         const userRole = req.user.role?.toLowerCase();
         const creatorName = req.user.name || (userRole === "admin" ? "Admin" : "Employee");
+        const autoLeadId = await generateLeadId();
 
         const newLead = new Lead({
+            leadId: autoLeadId,
             leadName,
             contactNumber,
             email: email ? email.trim() : "",
