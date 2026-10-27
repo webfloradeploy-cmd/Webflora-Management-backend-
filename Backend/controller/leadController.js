@@ -1,4 +1,47 @@
 import Lead from "../model/leadModel.js";
+import Admin from "../model/adminModel.js";
+import Employee from "../model/employeeModel.js";
+import Settings from "../model/settingsModel.js";
+import { sendNewLeadEmail } from "../utils/emailService.js";
+
+// Helper to retrieve all active staff/admins who have permission to access Leads
+const getLeadAccessRecipients = async () => {
+    try {
+        const recipients = [];
+
+        // 1. All Admins always have access to Leads
+        const admins = await Admin.find({}, 'email name role');
+        admins.forEach(a => {
+            if (a.email) {
+                recipients.push({ email: a.email, name: a.name || 'Admin', role: 'Admin' });
+            }
+        });
+
+        // 2. Fetch global settings for employee lead permissions
+        const settings = await Settings.findOne({ key: "global_settings" });
+        const globalLeadsAccess = settings?.employeePermissions?.leads ?? false;
+        const overrides = settings?.employeeOverrides || [];
+
+        // 3. Fetch active employees (excluding inactive staff)
+        const employees = await Employee.find({ status: { $ne: "inactive" } }, '_id email name role status');
+
+        employees.forEach(emp => {
+            const override = overrides.find(o => o.employeeId?.toString() === emp._id.toString());
+            const hasAccess = (override?.permissions?.leads !== undefined)
+                ? Boolean(override.permissions.leads)
+                : Boolean(globalLeadsAccess);
+
+            if (hasAccess && emp.email) {
+                recipients.push({ email: emp.email, name: emp.name || 'Employee', role: 'Employee' });
+            }
+        });
+
+        return recipients;
+    } catch (err) {
+        console.error('[getLeadAccessRecipients Error]:', err.message);
+        return [];
+    }
+};
 
 // Create a new lead
 const createLead = async (req, res) => {
@@ -6,6 +49,7 @@ const createLead = async (req, res) => {
         const { leadName, contactNumber, email, address, source, notes, status, interestStatus, followUpDate } = req.body;
         const userId = req.user.id;
         const userRole = req.user.role?.toLowerCase();
+        const creatorName = req.user.name || (userRole === "admin" ? "Admin" : "Employee");
 
         const newLead = new Lead({
             leadName,
@@ -20,12 +64,38 @@ const createLead = async (req, res) => {
             adminId: userRole === "admin" ? userId : undefined,
             createdBy: {
                 id: userId,
-                name: req.user.name || (userRole === "admin" ? "Admin" : "Employee"),
+                name: creatorName,
                 role: userRole
             }
         });
 
         await newLead.save();
+
+        // Send email notification to all roles that have access to Leads (Admin + Permitted Employees)
+        (async () => {
+            try {
+                const recipients = await getLeadAccessRecipients();
+                if (recipients && recipients.length > 0) {
+                    await sendNewLeadEmail(recipients, {
+                        leadName: newLead.leadName,
+                        contactNumber: newLead.contactNumber,
+                        email: newLead.email,
+                        address: newLead.address,
+                        source: newLead.source,
+                        notes: newLead.notes,
+                        interestStatus: newLead.interestStatus,
+                        followUpDate: newLead.followUpDate,
+                        createdByName: creatorName,
+                        createdByRole: userRole === "admin" ? "Admin" : "Employee"
+                    });
+                } else {
+                    console.log('[createLead] No recipients found with Leads access to notify.');
+                }
+            } catch (notifyErr) {
+                console.error('[createLead Notification Error]:', notifyErr.message);
+            }
+        })();
+
         res.status(201).json({ success: true, message: "Lead created successfully", lead: newLead });
     } catch (error) {
         res.status(500).json({ success: false, message: "Failed to create lead", error: error.message });

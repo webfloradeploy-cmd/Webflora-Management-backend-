@@ -524,3 +524,143 @@ export const sendDocumentEmail = async ({
         return { success: false, error: error.message };
     }
 };
+
+/**
+ * Sends a notification email to all staff/roles with Lead access when a new lead is added
+ */
+export const sendNewLeadEmail = async (recipients, leadData) => {
+    try {
+        if (!recipients || (Array.isArray(recipients) && recipients.length === 0)) {
+            console.log('[sendNewLeadEmail] No recipients with lead access found to notify.');
+            return { success: false, message: 'No recipients provided' };
+        }
+
+        const validRecipients = (Array.isArray(recipients) ? recipients : [recipients])
+            .map(r => typeof r === 'string' ? { email: r.trim() } : { email: r?.email?.trim(), name: r?.name })
+            .filter(r => isValidEmail(r.email));
+
+        if (validRecipients.length === 0) {
+            console.log('[sendNewLeadEmail] No valid recipient email addresses.');
+            return { success: false, message: 'No valid recipient emails' };
+        }
+
+        const transporter = getTransporter();
+        const sender = getSenderDetails();
+        const frontendUrl = process.env.FRONTEND_URL || 'https://crm.webfloratechnologies.com';
+
+        const {
+            leadName,
+            contactNumber,
+            email: leadEmail,
+            address,
+            source,
+            notes,
+            interestStatus = "Pending",
+            followUpDate,
+            createdByName = "Staff",
+            createdByRole = "User"
+        } = leadData;
+
+        const formattedFollowUp = followUpDate
+            ? new Date(followUpDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+            : 'Not scheduled';
+
+        const contentHtml = `
+            <p style="font-size: 16px; margin: 0 0 16px 0; color: #1e293b;">
+                A new business lead <strong>"${leadName}"</strong> has been added to the CRM system.
+            </p>
+
+            <div style="background-color: #f8fafc; padding: 24px; border-radius: 12px; margin: 20px 0; border: 1px solid #e2e8f0;">
+                <div style="font-size: 11px; font-weight: 800; color: #ff4e1b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;">
+                    Lead Summary
+                </div>
+                
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b; width: 140px;"><strong>Client / Company:</strong></td>
+                        <td style="padding: 7px 0; color: #0f172a; font-weight: 700;">${leadName}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b;"><strong>Contact Number:</strong></td>
+                        <td style="padding: 7px 0; color: #0f172a; font-weight: 600;">
+                            <a href="tel:${contactNumber}" style="color: #0f172a; text-decoration: none;">${contactNumber}</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b;"><strong>Email:</strong></td>
+                        <td style="padding: 7px 0; color: #0f172a;">
+                            ${leadEmail ? `<a href="mailto:${leadEmail}" style="color: #ff4e1b; text-decoration: none;">${leadEmail}</a>` : '<span style="color: #94a3b8; font-style: italic;">Not provided</span>'}
+                        </td>
+                    </tr>
+                    ${source ? `
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b;"><strong>Lead Source:</strong></td>
+                        <td style="padding: 7px 0; color: #0f172a;">${source}</td>
+                    </tr>
+                    ` : ''}
+                    ${address ? `
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b;"><strong>Location:</strong></td>
+                        <td style="padding: 7px 0; color: #0f172a;">${address}</td>
+                    </tr>
+                    ` : ''}
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b;"><strong>Interest Status:</strong></td>
+                        <td style="padding: 7px 0; color: #0f172a;">
+                            <span style="display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; background-color: #fef3c7; color: #92400e;">
+                                ${interestStatus}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b;"><strong>Next Follow-Up:</strong></td>
+                        <td style="padding: 7px 0; color: #0f172a; font-weight: 600;">${formattedFollowUp}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 7px 0; color: #64748b;"><strong>Registered By:</strong></td>
+                        <td style="padding: 7px 0; color: #475569;">${createdByName} (${createdByRole})</td>
+                    </tr>
+                    ${notes ? `
+                    <tr>
+                        <td style="padding: 10px 0 0 0; color: #64748b; vertical-align: top;"><strong>Notes / Scope:</strong></td>
+                        <td style="padding: 10px 0 0 0; color: #334155; font-style: italic; line-height: 1.5;">"${notes}"</td>
+                    </tr>
+                    ` : ''}
+                </table>
+            </div>
+
+            <div style="text-align: center; margin: 28px 0 20px 0;">
+                <a href="${frontendUrl}/leads" style="background-color: #ff4e1b; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block;">
+                    Open Leads in CRM &rarr;
+                </a>
+            </div>
+
+            <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 16px 0 0 0;">
+                You received this notification because your account has access to the Leads module in Webflora Management.
+            </p>
+        `;
+
+        const recipientEmails = [...new Set(validRecipients.map(r => r.email))];
+
+        const mailOptions = {
+            from: sender.from,
+            to: sender.email,
+            bcc: recipientEmails,
+            replyTo: sender.replyTo,
+            subject: `New Lead Added: ${leadName} - Webflora CRM`,
+            text: `A new lead "${leadName}" has been added by ${createdByName} (${createdByRole}).\nContact: ${contactNumber}\nEmail: ${leadEmail || 'N/A'}\nInterest: ${interestStatus}\nNext Follow-up: ${formattedFollowUp}\n\nLogin to view: ${frontendUrl}/leads`,
+            html: buildEmailTemplate({
+                title: 'New Lead Registered',
+                subtitle: `Lead: ${leadName}`,
+                contentHtml
+            })
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[sendNewLeadEmail] Notification delivered to ${recipientEmails.length} recipient(s) for lead "${leadName}" (MessageId: ${info.messageId})`);
+        return { success: true, messageId: info.messageId, count: recipientEmails.length };
+    } catch (error) {
+        console.error('[sendNewLeadEmail Error]:', error.message);
+        return { success: false, error: error.message };
+    }
+};
