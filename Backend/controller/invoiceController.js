@@ -258,6 +258,7 @@ const getAllInvoice = async (req, res) => {
     try {
         const invoices = await invoiceModel
             .find()
+            .sort({ createdAt: -1, _id: -1 })
             .populate("clientId")
             .populate("projectId")
             .populate("projectIds");

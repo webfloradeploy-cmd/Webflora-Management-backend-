@@ -71,7 +71,7 @@ const getExpenses = async (req, res) => {
         }
 
         const expenses = await Expense.find(query)
-            .sort({ date: -1 })
+            .sort({ date: -1, createdAt: -1, _id: -1 })
             .populate("recordedBy", "name email role");
 
         // Manually populate recipient names
