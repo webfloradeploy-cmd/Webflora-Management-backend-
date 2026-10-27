@@ -28,8 +28,20 @@ const leadSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ["New", "Contacted", "Interested", "Not Interested", "Quotation Requested", "Quotation Approved", "Closed", "Lost"],
+        enum: ["New", "Contacted", "Interested", "Not Interested", "Quotation Requested", "Quotation Approved", "Closed", "Lost", "Converted"],
         default: "New"
+    },
+    isConverted: {
+        type: Boolean,
+        default: false
+    },
+    convertedToClientId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "client"
+    },
+    convertedAt: {
+        type: Date,
+        default: null
     },
     interestStatus: {
         type: String,

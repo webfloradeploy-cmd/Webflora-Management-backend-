@@ -8,7 +8,8 @@ import {
     requestQuotation,
     approveQuotationRequest,
     rejectQuotationRequest,
-    addFollowUp
+    addFollowUp,
+    convertToCustomer
 } from "../controller/leadController.js";
 import authMiddleware from "../middleware/auth.js";
 
@@ -27,5 +28,8 @@ router.put("/:id/reject-quotation", authMiddleware(["admin"]), rejectQuotationRe
 
 // Follow-up history and multiple logs
 router.post("/:id/follow-up", authMiddleware(["admin", "employee"]), addFollowUp);
+
+// Convert Lead to Customer and remove from leads
+router.post("/:id/convert-to-customer", authMiddleware(["admin", "employee"]), convertToCustomer);
 
 export default router;

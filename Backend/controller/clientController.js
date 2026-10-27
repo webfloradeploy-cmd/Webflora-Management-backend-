@@ -43,6 +43,34 @@ const Addclients = async (req, res) => {
 
         await newClient.save();
 
+        // If an existing lead matches this client's contactNumber or email, automatically remove it from leads
+        try {
+            const Lead = (await import("../model/leadModel.js")).default;
+            const Quotation = (await import("../model/quotationModel.js")).default;
+            const matchingLead = await Lead.findOne({
+                $or: [
+                    { contactNumber },
+                    ...(email ? [{ email }] : [])
+                ]
+            });
+
+            if (matchingLead) {
+                const quotationCount = await Quotation.countDocuments({ leadId: matchingLead._id });
+                if (quotationCount === 0) {
+                    await Lead.findByIdAndDelete(matchingLead._id);
+                } else {
+                    matchingLead.isConverted = true;
+                    matchingLead.status = "Converted";
+                    matchingLead.convertedToClientId = newClient._id;
+                    matchingLead.convertedAt = new Date();
+                    await matchingLead.save();
+                }
+                console.log(`[Addclients] Matching lead '${matchingLead.leadName}' automatically converted and removed from leads.`);
+            }
+        } catch (leadSyncErr) {
+            console.error('[Addclients Lead Sync Warning]:', leadSyncErr.message);
+        }
+
         res.status(201).json({
             message: "Client created successfully",
             client: newClient

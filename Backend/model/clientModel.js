@@ -12,14 +12,15 @@ const clientSchema = new mongoose.Schema({
     },
     email:{
        type:String,
-       required:true,
+       required:false,
        lowercase:true,
-       unique:true
+       trim: true,
+       default: ""
     },
     address:{
         type:String,
         default: "",
-        required:true
+        required:false
     },
     clientId: {
         type: String,

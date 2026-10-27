@@ -2,8 +2,10 @@ import Lead from "../model/leadModel.js";
 import Admin from "../model/adminModel.js";
 import Employee from "../model/employeeModel.js";
 import Settings from "../model/settingsModel.js";
+import Client from "../model/clientModel.js";
+import Counter from "../model/counterModel.js";
 import { sendNewLeadEmail } from "../utils/emailService.js";
-import { generateLeadId } from "../utils/idGenerator.js";
+import { generateLeadId, generateCustomerId } from "../utils/idGenerator.js";
 
 // Helper to retrieve all active staff/admins who have permission to access Leads
 const getLeadAccessRecipients = async () => {
@@ -105,10 +107,13 @@ const createLead = async (req, res) => {
     }
 };
 
-// Get all leads
+// Get all leads (excludes converted leads)
 const getAllLeads = async (req, res) => {
     try {
-        const leads = await Lead.find().sort({ createdAt: -1 });
+        const leads = await Lead.find({
+            isConverted: { $ne: true },
+            status: { $nin: ["Converted", "Closed - Converted"] }
+        }).sort({ createdAt: -1 });
         res.status(200).json({ success: true, leads });
     } catch (error) {
         res.status(500).json({ success: false, message: "Failed to fetch leads", error: error.message });
@@ -317,6 +322,72 @@ const deleteLead = async (req, res) => {
     }
 };
 
+// Convert a lead to a paying customer/client and remove from leads
+const convertToCustomer = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const lead = await Lead.findById(id);
+
+        if (!lead) {
+            return res.status(404).json({ success: false, message: "Lead not found" });
+        }
+
+        // Check if a client with this contact number or email already exists
+        let client = await Client.findOne({ contactNumber: lead.contactNumber });
+        if (!client && lead.email) {
+            client = await Client.findOne({ email: lead.email.toLowerCase().trim() });
+        }
+
+        if (!client) {
+            const autoClientId = await generateCustomerId();
+
+            const counter = await Counter.findOneAndUpdate(
+                { id: "clientReference" },
+                { $inc: { seq: 1 } },
+                { new: true, upsert: true }
+            );
+            const refNo = `WT-REF-${String(counter.seq).padStart(4, '0')}`;
+
+            client = new Client({
+                clientName: lead.leadName,
+                contactNumber: lead.contactNumber,
+                email: lead.email ? lead.email.toLowerCase().trim() : "",
+                address: lead.address || "N/A",
+                referenceNo: refNo,
+                clientId: autoClientId
+            });
+
+            await client.save();
+        }
+
+        // Remove from Leads:
+        // Check if any quotation references this lead
+        const Quotation = (await import("../model/quotationModel.js")).default;
+        const quotationCount = await Quotation.countDocuments({ leadId: id });
+
+        if (quotationCount === 0) {
+            // Permanently remove from leads collection if not referenced by quotation
+            await Lead.findByIdAndDelete(id);
+        } else {
+            // Keep record for Quotation populated history, but flag as converted so it is removed from Leads list
+            lead.isConverted = true;
+            lead.status = "Converted";
+            lead.convertedToClientId = client._id;
+            lead.convertedAt = new Date();
+            await lead.save();
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Lead successfully converted to Customer (${client.clientId || client.clientName}) and removed from leads`,
+            client
+        });
+    } catch (error) {
+        console.error("Convert to Customer Error:", error);
+        res.status(500).json({ success: false, message: "Failed to convert lead to customer", error: error.message });
+    }
+};
+
 export {
     createLead,
     getAllLeads,
@@ -326,5 +397,6 @@ export {
     requestQuotation,
     approveQuotationRequest,
     rejectQuotationRequest,
-    addFollowUp
+    addFollowUp,
+    convertToCustomer
 };
