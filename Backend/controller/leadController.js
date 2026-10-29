@@ -137,6 +137,7 @@ const getLeadById = async (req, res) => {
 const updateLead = async (req, res) => {
     try {
         const data = { ...req.body };
+        delete data.leadId; // Prevent accidental modification of generated leadId
         if (data.followUpDate) {
             data.followUpDate = new Date(data.followUpDate);
         }

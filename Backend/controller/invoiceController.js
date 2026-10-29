@@ -179,6 +179,8 @@ const getInvoicesByProject = async (req, res) => {
             return {
                 ...inv.toObject(),
                 clientName: inv.clientId?.clientName || "General Client",
+                customerCode: inv.clientId?.clientId || inv.clientId?.referenceNo || "",
+                clientAddress: inv.clientId?.address || "",
                 projectName: projectNames,
                 id: inv._id,
                 number: inv.invoiceNo,
@@ -235,6 +237,8 @@ const getInvoice = async (req, res) => {
             return {
                 ...inv.toObject(),
                 clientName: inv.clientId?.clientName || "General Client",
+                customerCode: inv.clientId?.clientId || inv.clientId?.referenceNo || "",
+                clientAddress: inv.clientId?.address || "",
                 projectName: projectNames,
                 id: inv._id,
                 number: inv.invoiceNo,
@@ -288,6 +292,8 @@ const getAllInvoice = async (req, res) => {
             return {
                 ...inv.toObject(),
                 clientName: inv.clientId?.clientName || "General Client",
+                customerCode: inv.clientId?.clientId || inv.clientId?.referenceNo || "",
+                clientAddress: inv.clientId?.address || "",
                 projectName: projectNames,
                 id: inv._id,
                 number: inv.invoiceNo,

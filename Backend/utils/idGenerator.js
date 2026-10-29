@@ -54,16 +54,18 @@ export const generateInternId = async () => {
 };
 
 /**
- * Generate next unique Customer / Client ID (e.g. CUST-001, CUST-002...)
+ * Generate next unique Customer / Client ID based on creation year (e.g. 2601, 2602, 2603... in 2026; 2701, 2702... in 2027)
  */
-export const generateCustomerId = async () => {
+export const generateCustomerId = async (targetDate = new Date()) => {
     try {
-        const clients = await Client.find({}, { clientId: 1, referenceNo: 1 }).lean();
+        const year = new Date(targetDate).getFullYear();
+        const yearPrefix = String(year).slice(-2); // e.g. "26" for 2026, "27" for 2027
+        const clients = await Client.find({ clientId: { $exists: true, $ne: "" } }, { clientId: 1 }).lean();
         let maxNum = 0;
+        const regex = new RegExp(`^(?:CUST-)?${yearPrefix}(\\d+)`, "i");
         for (const c of clients) {
-            const idToTest = c.clientId || c.referenceNo;
-            if (idToTest) {
-                const match = idToTest.match(/(?:CUST|CLI|REF)-?(\d+)/i);
+            if (c.clientId) {
+                const match = String(c.clientId).match(regex);
                 if (match) {
                     const num = parseInt(match[1], 10);
                     if (num > maxNum) maxNum = num;
@@ -71,23 +73,27 @@ export const generateCustomerId = async () => {
             }
         }
         const nextNum = maxNum + 1;
-        return `CUST-${String(nextNum).padStart(3, "0")}`;
+        return `CUST-${yearPrefix}${String(nextNum).padStart(2, "0")}`;
     } catch (err) {
         console.error("[generateCustomerId] Error:", err);
-        return `CUST-${Date.now().toString().slice(-4)}`;
+        const yearPrefix = String(new Date().getFullYear()).slice(-2);
+        return `CUST-${yearPrefix}${Date.now().toString().slice(-2)}`;
     }
 };
 
 /**
- * Generate next unique Lead ID (e.g. LEAD-001, LEAD-002...)
+ * Generate next unique Lead ID based on creation year (e.g. LEAD-2601, LEAD-2602... in 2026; LEAD-2701... in 2027)
  */
-export const generateLeadId = async () => {
+export const generateLeadId = async (targetDate = new Date()) => {
     try {
-        const leads = await Lead.find({}, { leadId: 1 }).lean();
+        const year = new Date(targetDate).getFullYear();
+        const yearPrefix = String(year).slice(-2); // e.g. "26" for 2026, "27" for 2027
+        const leads = await Lead.find({ leadId: { $exists: true, $ne: "" } }, { leadId: 1 }).lean();
         let maxNum = 0;
+        const regex = new RegExp(`^(?:LEAD-)?${yearPrefix}(\\d+)`, "i");
         for (const lead of leads) {
             if (lead.leadId) {
-                const match = lead.leadId.match(/LEAD-(\d+)/i);
+                const match = String(lead.leadId).match(regex);
                 if (match) {
                     const num = parseInt(match[1], 10);
                     if (num > maxNum) maxNum = num;
@@ -95,10 +101,11 @@ export const generateLeadId = async () => {
             }
         }
         const nextNum = maxNum + 1;
-        return `LEAD-${String(nextNum).padStart(3, "0")}`;
+        return `LEAD-${yearPrefix}${String(nextNum).padStart(2, "0")}`;
     } catch (err) {
         console.error("[generateLeadId] Error:", err);
-        return `LEAD-${Date.now().toString().slice(-4)}`;
+        const yearPrefix = String(new Date().getFullYear()).slice(-2);
+        return `LEAD-${yearPrefix}${Date.now().toString().slice(-2)}`;
     }
 };
 
@@ -169,66 +176,118 @@ export const backfillUniqueIds = async () => {
             console.log(`[ID Generator] Successfully assigned unique IDs to all interns.`);
         }
 
-        // 3. Backfill Customers / Clients
-        const clientsToBackfill = await Client.find({
-            $or: [
-                { clientId: { $exists: false } },
-                { clientId: null },
-                { clientId: "" }
-            ]
-        }).sort({ createdAt: 1, _id: 1 });
+        // 3. Backfill & Standardize Customers / Clients (Year-based: e.g. 2601, 2602... for 2026; 2701, 2702... for 2027)
+        const allClients = await Client.find({}).sort({ createdAt: 1, _id: 1 });
+        if (allClients.length > 0) {
+            const clientsByYear = {};
+            for (const client of allClients) {
+                const createdYear = client.createdAt ? new Date(client.createdAt).getFullYear() : new Date().getFullYear();
+                if (!clientsByYear[createdYear]) {
+                    clientsByYear[createdYear] = [];
+                }
+                clientsByYear[createdYear].push(client);
+            }
 
-        if (clientsToBackfill.length > 0) {
-            console.log(`[ID Generator] Backfilling unique Customer IDs for ${clientsToBackfill.length} customers/clients...`);
-            const existingClients = await Client.find({ clientId: { $exists: true, $ne: "" } }, { clientId: 1 }).lean();
-            let maxNumCust = 0;
-            for (const c of existingClients) {
-                if (c.clientId) {
-                    const match = c.clientId.match(/^CUST-(\d+)$/i);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        if (num > maxNumCust) maxNumCust = num;
+            for (const [yearStr, clientsForYear] of Object.entries(clientsByYear)) {
+                const yearPrefix = String(yearStr).slice(-2);
+                const validYearRegex = new RegExp(`^CUST-${yearPrefix}\\d{2,}$`);
+
+                const needsUpdate = clientsForYear.some(c => !c.clientId || !validYearRegex.test(c.clientId));
+
+                if (needsUpdate) {
+                    console.log(`[ID Generator] Migrating/Backfilling client IDs for year ${yearStr} (${clientsForYear.length} clients)...`);
+
+                    const usedNumbers = new Set();
+                    for (const c of clientsForYear) {
+                        if (c.clientId && validYearRegex.test(c.clientId)) {
+                            const num = parseInt(c.clientId.replace(`CUST-${yearPrefix}`, ""), 10);
+                            if (!isNaN(num)) usedNumbers.add(num);
+                        }
                     }
+
+                    const allLegacyOrMissing = clientsForYear.every(c => !c.clientId || !validYearRegex.test(c.clientId));
+
+                    if (allLegacyOrMissing) {
+                        let seq = 1;
+                        for (const client of clientsForYear) {
+                            client.clientId = `CUST-${yearPrefix}${String(seq).padStart(2, "0")}`;
+                            await client.save();
+                            seq++;
+                        }
+                    } else {
+                        let seq = 1;
+                        for (const client of clientsForYear) {
+                            if (!client.clientId || !validYearRegex.test(client.clientId)) {
+                                while (usedNumbers.has(seq)) {
+                                    seq++;
+                                }
+                                client.clientId = `CUST-${yearPrefix}${String(seq).padStart(2, "0")}`;
+                                usedNumbers.add(seq);
+                                await client.save();
+                            }
+                        }
+                    }
+                    console.log(`[ID Generator] Successfully assigned CUST-IDs to clients for year ${yearStr}.`);
                 }
             }
-
-            for (const client of clientsToBackfill) {
-                maxNumCust++;
-                client.clientId = `CUST-${String(maxNumCust).padStart(3, "0")}`;
-                await client.save();
-            }
-            console.log(`[ID Generator] Successfully assigned unique Customer IDs (CUST-XXX) to all clients.`);
         }
 
-        // 4. Backfill Leads
-        const leadsToBackfill = await Lead.find({
-            $or: [
-                { leadId: { $exists: false } },
-                { leadId: null },
-                { leadId: "" }
-            ]
-        }).sort({ createdAt: 1, _id: 1 });
+        // 4. Backfill & Standardize Leads (Year-based: e.g. LEAD-2601, LEAD-2602... for 2026; LEAD-2701... for 2027)
+        const allLeads = await Lead.find({}).sort({ createdAt: 1, _id: 1 });
+        if (allLeads.length > 0) {
+            // Group leads by creation year
+            const leadsByYear = {};
+            for (const lead of allLeads) {
+                const createdYear = lead.createdAt ? new Date(lead.createdAt).getFullYear() : new Date().getFullYear();
+                if (!leadsByYear[createdYear]) {
+                    leadsByYear[createdYear] = [];
+                }
+                leadsByYear[createdYear].push(lead);
+            }
 
-        if (leadsToBackfill.length > 0) {
-            console.log(`[ID Generator] Backfilling unique IDs for ${leadsToBackfill.length} leads...`);
-            const existingLeads = await Lead.find({ leadId: { $exists: true, $ne: "" } }, { leadId: 1 }).lean();
-            let maxNumLead = 0;
-            for (const l of existingLeads) {
-                if (l.leadId) {
-                    const match = l.leadId.match(/^LEAD-(\d+)$/i);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        if (num > maxNumLead) maxNumLead = num;
+            for (const [yearStr, leadsForYear] of Object.entries(leadsByYear)) {
+                const yearPrefix = String(yearStr).slice(-2);
+                const validYearRegex = new RegExp(`^LEAD-${yearPrefix}\\d{2,}$`);
+
+                // Check if any leads for this year need migration or assignment
+                const needsUpdate = leadsForYear.some(l => !l.leadId || !validYearRegex.test(l.leadId));
+
+                if (needsUpdate) {
+                    console.log(`[ID Generator] Migrating/Backfilling lead IDs for year ${yearStr} (${leadsForYear.length} leads)...`);
+                    
+                    const usedNumbers = new Set();
+                    for (const l of leadsForYear) {
+                        if (l.leadId && validYearRegex.test(l.leadId)) {
+                            const num = parseInt(l.leadId.replace(`LEAD-${yearPrefix}`, ""), 10);
+                            if (!isNaN(num)) usedNumbers.add(num);
+                        }
                     }
+
+                    const allLegacyOrMissing = leadsForYear.every(l => !l.leadId || !validYearRegex.test(l.leadId));
+
+                    if (allLegacyOrMissing) {
+                        let seq = 1;
+                        for (const lead of leadsForYear) {
+                            lead.leadId = `LEAD-${yearPrefix}${String(seq).padStart(2, "0")}`;
+                            await lead.save();
+                            seq++;
+                        }
+                    } else {
+                        let seq = 1;
+                        for (const lead of leadsForYear) {
+                            if (!lead.leadId || !validYearRegex.test(lead.leadId)) {
+                                while (usedNumbers.has(seq)) {
+                                    seq++;
+                                }
+                                lead.leadId = `LEAD-${yearPrefix}${String(seq).padStart(2, "0")}`;
+                                usedNumbers.add(seq);
+                                await lead.save();
+                            }
+                        }
+                    }
+                    console.log(`[ID Generator] Successfully assigned LEAD-IDs to leads for year ${yearStr}.`);
                 }
             }
-
-            for (const lead of leadsToBackfill) {
-                maxNumLead++;
-                lead.leadId = `LEAD-${String(maxNumLead).padStart(3, "0")}`;
-                await lead.save();
-            }
-            console.log(`[ID Generator] Successfully assigned unique IDs (LEAD-XXX) to all leads.`);
         }
     } catch (err) {
         console.error("[ID Generator] Error in backfillUniqueIds:", err);

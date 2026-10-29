@@ -73,7 +73,7 @@ const createQuotation = async (req, res) => {
         });
 
         await newQuotation.save();
-        await newQuotation.populate("leadId", "leadName email contactNumber");
+        await newQuotation.populate("leadId", "leadId leadName email contactNumber");
         res.status(201).json({ success: true, message: "Quotation created successfully", quotation: newQuotation });
     } catch (error) {
         res.status(500).json({ success: false, message: "Failed to create quotation", error: error.message });
@@ -84,7 +84,7 @@ const createQuotation = async (req, res) => {
 const getAllQuotations = async (req, res) => {
     try {
         const quotations = await Quotation.find()
-            .populate("leadId", "leadName email contactNumber")
+            .populate("leadId", "leadId leadName email contactNumber")
             .sort({ createdAt: -1 });
         res.status(200).json({ success: true, quotations });
     } catch (error) {
@@ -95,7 +95,7 @@ const getAllQuotations = async (req, res) => {
 // Get quotation by ID
 const getQuotationById = async (req, res) => {
     try {
-        const quotation = await Quotation.findById(req.params.id).populate("leadId", "leadName email contactNumber");
+        const quotation = await Quotation.findById(req.params.id).populate("leadId", "leadId leadName email contactNumber");
         if (!quotation) {
             return res.status(404).json({ success: false, message: "Quotation not found" });
         }
@@ -114,7 +114,7 @@ const updateQuotation = async (req, res) => {
         }
 
         const quotation = await Quotation.findByIdAndUpdate(req.params.id, updateData, { new: true })
-            .populate("leadId", "leadName email contactNumber");
+            .populate("leadId", "leadId leadName email contactNumber");
         if (!quotation) {
             return res.status(404).json({ success: false, message: "Quotation not found" });
         }
@@ -140,7 +140,7 @@ const deleteQuotation = async (req, res) => {
 // Send quotation via email
 const sendQuotationEmail = async (req, res) => {
     try {
-        const quotation = await Quotation.findById(req.params.id).populate("leadId", "leadName email contactNumber");
+        const quotation = await Quotation.findById(req.params.id).populate("leadId", "leadId leadName email contactNumber");
         if (!quotation) {
             return res.status(404).json({ success: false, message: "Quotation not found" });
         }

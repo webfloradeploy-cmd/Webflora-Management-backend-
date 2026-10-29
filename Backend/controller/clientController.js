@@ -91,10 +91,13 @@ const getAllClient = async (req, res) => {
         const invoiceModel = (await import("../model/invoiceModel.js")).default;
 
         const clientsWithFinancials = await Promise.all(clients.map(async (client) => {
-            const projects = await projectModel.find({ client: client._id });
+            const projects = await projectModel.find({ client: client._id }).sort({ createdAt: -1, _id: -1 });
             let totalDue = 0;
-            // totalDue is the sum of (Project Total - Invoiced Amount) for all client projects
+            let totalBilled = 0;
+
             for (const p of projects) {
+                totalBilled += (Number(p.totalAmount) || 0);
+
                 const invoicesForProject = await invoiceModel.find({ 
                     $or: [
                         { projectIds: p._id },
@@ -102,11 +105,23 @@ const getAllClient = async (req, res) => {
                     ] 
                 });
                 const totalInvoiced = invoicesForProject.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
-                totalDue += (Math.max(0, p.totalAmount - totalInvoiced));
+                totalDue += (Math.max(0, (Number(p.totalAmount) || 0) - totalInvoiced));
             }
 
             return {
                 ...client.toObject(),
+                projectsCount: projects.length,
+                projectsList: projects.map(p => ({
+                    _id: p._id,
+                    projectName: p.projectName,
+                    status: p.status,
+                    totalAmount: p.totalAmount,
+                    techStack: p.techStack || [],
+                    startDate: p.startDate,
+                    endDate: p.endDate,
+                    description: p.description || ""
+                })),
+                totalBilled,
                 totalDue
             };
         }));
