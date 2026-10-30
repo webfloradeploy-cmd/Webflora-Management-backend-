@@ -1,5 +1,5 @@
 import express from "express";
-import { AddInvoice, getInvoice, getAllInvoice, deleteInvoice, updateInvoice, getInvoicesByProject } from '../controller/invoiceController.js';
+import { AddInvoice, getInvoice, getAllInvoice, deleteInvoice, updateInvoice, recordPayment, getInvoicesByProject } from '../controller/invoiceController.js';
 import authMiddleware from "../middleware/auth.js";
 
 const router = express.Router();
@@ -12,7 +12,9 @@ router.get('/:id', authMiddleware(["admin", "employee"]), getInvoice);
 
 router.get('/', authMiddleware(["admin", "employee"]), getAllInvoice);
 
-router.put('/update/:id', authMiddleware(["admin"]), updateInvoice);
+router.post('/:id/pay', authMiddleware(["admin", "employee"]), recordPayment);
+
+router.put('/update/:id', authMiddleware(["admin", "employee"]), updateInvoice);
 
 router.delete('/delete/:id', authMiddleware(["admin"]), deleteInvoice);
 

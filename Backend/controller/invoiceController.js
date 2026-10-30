@@ -176,6 +176,13 @@ const getInvoicesByProject = async (req, res) => {
                 projectDue += Math.max(0, pBudget - pPaid);
             }
 
+            const totalInvoiceObligation = (Number(inv.amount) || 0) + (Number(inv.previousDue) || 0);
+            let paidAmount = Number(inv.paidAmount) || 0;
+            if (!inv.paidAmount && inv.status === 'paid') {
+                paidAmount = totalInvoiceObligation;
+            }
+            const remainingDue = inv.status === 'paid' ? 0 : Math.max(0, totalInvoiceObligation - paidAmount);
+
             return {
                 ...inv.toObject(),
                 clientName: inv.clientId?.clientName || "General Client",
@@ -185,7 +192,10 @@ const getInvoicesByProject = async (req, res) => {
                 id: inv._id,
                 number: inv.invoiceNo,
                 total: Number(inv.amount) || 0,
-                grandTotal: (Number(inv.amount) || 0) + (Number(inv.previousDue) || 0),
+                grandTotal: totalInvoiceObligation,
+                paidAmount: paidAmount,
+                remainingDue: remainingDue,
+                payments: inv.payments || [],
                 projectTotal: projectTotal > 0 ? projectTotal : Number(inv.amount) || 0,
                 projectDue: projectDue
             };
@@ -234,6 +244,13 @@ const getInvoice = async (req, res) => {
                 projectDue += Math.max(0, pBudget - pPaid);
             }
 
+            const totalInvoiceObligation = (Number(inv.amount) || 0) + (Number(inv.previousDue) || 0);
+            let paidAmount = Number(inv.paidAmount) || 0;
+            if (!inv.paidAmount && inv.status === 'paid') {
+                paidAmount = totalInvoiceObligation;
+            }
+            const remainingDue = inv.status === 'paid' ? 0 : Math.max(0, totalInvoiceObligation - paidAmount);
+
             return {
                 ...inv.toObject(),
                 clientName: inv.clientId?.clientName || "General Client",
@@ -243,7 +260,10 @@ const getInvoice = async (req, res) => {
                 id: inv._id,
                 number: inv.invoiceNo,
                 total: Number(inv.amount) || 0,
-                grandTotal: (Number(inv.amount) || 0) + (Number(inv.previousDue) || 0),
+                grandTotal: totalInvoiceObligation,
+                paidAmount: paidAmount,
+                remainingDue: remainingDue,
+                payments: inv.payments || [],
                 projectTotal: projectTotal > 0 ? projectTotal : Number(inv.amount) || 0,
                 projectDue: projectDue
             };
@@ -289,6 +309,13 @@ const getAllInvoice = async (req, res) => {
                 projectDue += Math.max(0, pBudget - pPaid);
             }
 
+            const totalInvoiceObligation = (Number(inv.amount) || 0) + (Number(inv.previousDue) || 0);
+            let paidAmount = Number(inv.paidAmount) || 0;
+            if (!inv.paidAmount && inv.status === 'paid') {
+                paidAmount = totalInvoiceObligation;
+            }
+            const remainingDue = inv.status === 'paid' ? 0 : Math.max(0, totalInvoiceObligation - paidAmount);
+
             return {
                 ...inv.toObject(),
                 clientName: inv.clientId?.clientName || "General Client",
@@ -298,7 +325,10 @@ const getAllInvoice = async (req, res) => {
                 id: inv._id,
                 number: inv.invoiceNo,
                 total: Number(inv.amount) || 0,
-                grandTotal: (Number(inv.amount) || 0) + (Number(inv.previousDue) || 0),
+                grandTotal: totalInvoiceObligation,
+                paidAmount: paidAmount,
+                remainingDue: remainingDue,
+                payments: inv.payments || [],
                 projectTotal: projectTotal > 0 ? projectTotal : Number(inv.amount) || 0,
                 projectDue: projectDue
             };
@@ -392,6 +422,22 @@ const updateInvoice = async (req, res) => {
             }
         }
 
+        const targetPaidAmount = req.body.paidAmount !== undefined 
+            ? Number(req.body.paidAmount) 
+            : (status === 'paid' ? targetAmount + totalClientDue : (invoice.paidAmount || 0));
+
+        let targetPayments = invoice.payments || [];
+        if (req.body.payments && Array.isArray(req.body.payments)) {
+            targetPayments = req.body.payments;
+        } else if (req.body.newPayment) {
+            targetPayments.push({
+                amount: Number(req.body.newPayment.amount),
+                method: req.body.newPayment.method || req.body.method || "Bank Transfer",
+                date: req.body.newPayment.date ? new Date(req.body.newPayment.date) : new Date(),
+                notes: req.body.newPayment.notes || ""
+            });
+        }
+
         const data = {
             clientId: targetClientId,
             selectedDues: targetSelectedDues,
@@ -399,6 +445,8 @@ const updateInvoice = async (req, res) => {
             referenceNo: referenceNo || invoice.referenceNo,
             invoiceNo: invoiceNo || invoice.invoiceNo,
             amount: targetAmount,
+            paidAmount: targetPaidAmount,
+            payments: targetPayments,
             description: description !== undefined ? description : invoice.description,
             method: method || invoice.method,
             items: items !== undefined ? items : invoice.items,
@@ -430,19 +478,105 @@ const updateInvoice = async (req, res) => {
             ? populatedInvoice.projectIds.map(p => p.projectName || "Standard Project").join(" & ")
             : (populatedInvoice.projectId?.projectName || "Standard Project");
 
+        const totalInvoiceObligation = populatedInvoice.amount + (populatedInvoice.previousDue || 0);
+        let paidAmt = Number(populatedInvoice.paidAmount) || 0;
+        if (!populatedInvoice.paidAmount && populatedInvoice.status === 'paid') {
+            paidAmt = totalInvoiceObligation;
+        }
+        const remainingDue = populatedInvoice.status === 'paid' ? 0 : Math.max(0, totalInvoiceObligation - paidAmt);
+
         res.status(200).json({
             message: "Invoice updated successfully",
             invoice: {
                 ...populatedInvoice.toObject(),
                 id: populatedInvoice._id,
                 number: populatedInvoice.invoiceNo,
+                customerCode: populatedInvoice.clientId?.clientId || populatedInvoice.clientId?.referenceNo || "",
                 projectName: projectNames,
-                grandTotal: populatedInvoice.amount + (populatedInvoice.previousDue || 0)
+                grandTotal: totalInvoiceObligation,
+                paidAmount: paidAmt,
+                remainingDue: remainingDue,
+                payments: populatedInvoice.payments || []
             }
         });
 
     } catch (error) {
         res.status(500).json({ message: "Failed to update invoice", error: error.message });
+    }
+};
+
+// Record Partial or Full Payment
+const recordPayment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { amount, method, date, notes } = req.body;
+
+        const paymentAmount = Number(amount);
+        if (!paymentAmount || paymentAmount <= 0) {
+            return res.status(400).json({ message: "Payment amount must be greater than 0" });
+        }
+
+        const invoice = await invoiceModel.findById(id);
+        if (!invoice) {
+            return res.status(404).json({ message: "Invoice not found!" });
+        }
+
+        const totalObligation = (Number(invoice.amount) || 0) + (Number(invoice.previousDue) || 0);
+        const currentPaid = Number(invoice.paidAmount) || (invoice.status === 'paid' ? totalObligation : 0);
+        const remainingBefore = Math.max(0, totalObligation - currentPaid);
+
+        if (paymentAmount > remainingBefore) {
+            return res.status(400).json({ 
+                message: `Payment amount (₹${paymentAmount}) cannot exceed remaining balance (₹${remainingBefore})` 
+            });
+        }
+
+        const newPaidTotal = currentPaid + paymentAmount;
+        const isFullyPaid = newPaidTotal >= totalObligation;
+
+        if (!invoice.payments) {
+            invoice.payments = [];
+        }
+
+        invoice.payments.push({
+            amount: paymentAmount,
+            date: date ? new Date(date) : new Date(),
+            method: method || invoice.method || "Bank Transfer",
+            notes: notes || ""
+        });
+
+        invoice.paidAmount = newPaidTotal;
+        invoice.method = method || invoice.method;
+        invoice.status = isFullyPaid ? "paid" : "partial";
+
+        await invoice.save();
+
+        const populatedInvoice = await invoiceModel.findById(invoice._id)
+            .populate("clientId")
+            .populate("projectId")
+            .populate("projectIds");
+
+        const projectNames = (populatedInvoice.projectIds && populatedInvoice.projectIds.length > 0)
+            ? populatedInvoice.projectIds.map(p => p.projectName || "Standard Project").join(" & ")
+            : (populatedInvoice.projectId?.projectName || "Standard Project");
+
+        res.status(200).json({
+            message: isFullyPaid ? "Invoice fully paid successfully!" : `Partial payment of ₹${paymentAmount} recorded successfully!`,
+            invoice: {
+                ...populatedInvoice.toObject(),
+                id: populatedInvoice._id,
+                number: populatedInvoice.invoiceNo,
+                projectName: projectNames,
+                customerCode: populatedInvoice.clientId?.clientId || populatedInvoice.clientId?.referenceNo || "",
+                grandTotal: totalObligation,
+                paidAmount: newPaidTotal,
+                remainingDue: Math.max(0, totalObligation - newPaidTotal),
+                payments: populatedInvoice.payments || []
+            }
+        });
+    } catch (error) {
+        console.error("Record payment error:", error);
+        res.status(500).json({ message: "Failed to record payment", error: error.message });
     }
 };
 
@@ -499,6 +633,7 @@ export {
     getInvoice,
     getAllInvoice,
     updateInvoice,
+    recordPayment,
     deleteInvoice,
     getInvoicesByProject
 };

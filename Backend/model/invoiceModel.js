@@ -52,9 +52,19 @@ const invoiceSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ["pending", "paid", "overdue"],
+        enum: ["pending", "partial", "paid", "overdue"],
         default: "pending"
     },
+    paidAmount: {
+        type: Number,
+        default: 0
+    },
+    payments: [{
+        amount: { type: Number, required: true },
+        date: { type: Date, default: Date.now },
+        method: { type: String, default: "Bank Transfer" },
+        notes: { type: String, default: "" }
+    }],
     previousDue: {
         type: Number,
         default: 0
